@@ -10,27 +10,58 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Stream 10,000 Puzzles Directly from Lichess
+      - name: Stream 10,000 Puzzles
         run: |
           which zstd || (sudo apt-get update && sudo apt-get install -y zstd)
-          (curl -sL https://lichess.org | zstd -d -q | head -n 10001 > puzzles.csv) || true
           node -e '
           const fs = require("fs");
-          const lines = fs.readFileSync("puzzles.csv", "utf8").trim().split("\n").slice(1);
-          const puzzles = lines.map(line => {
-            const c = line.split(",");
-            return {
-              id: c[0],
-              f: c[1],
-              m: c[2].trim().split(" "),
-              r: Number(c[3]),
-              t: (c[7] || "").trim().split(" ").slice(0, 3)
-            };
-          }).filter(p => p.f && p.m.length > 1);
-          puzzles.sort((a, b) => a.r - b.r);
-          fs.mkdirSync("public", { recursive: true });
-          fs.writeFileSync("public/puzzles.txt", JSON.stringify(puzzles));
-          console.log("Saved exact count:", puzzles.length);
+          const readline = require("readline");
+          const { spawn } = require("child_process");
+
+          (async () => {
+            const curl = spawn("curl", [
+              "-sSL",
+              "-A", "Mozilla/5.0 (compatible; GrandmasterArena/1.0)",
+              "https://lichess.org"
+            ]);
+            const zstd = spawn("zstd", ["-d", "-q", "-c"]);
+            curl.stdout.pipe(zstd.stdin);
+
+            const rl = readline.createInterface({ input: zstd.stdout });
+            const puzzles = [];
+            let isHeader = true;
+
+            for await (const line of rl) {
+              if (isHeader) { isHeader = false; continue; }
+              const c = line.split(",");
+              if (c.length < 8) continue;
+
+              puzzles.push({
+                id: c.at(0),
+                f: c.at(1),
+                m: c.at(2).trim().split(" "),
+                r: Number(c.at(3)),
+                t: c.at(7).trim().split(" ").slice(0, 3)
+              });
+
+              if (puzzles.length >= 10000) {
+                rl.close();
+                curl.kill();
+                zstd.kill();
+                break;
+              }
+            }
+
+            if (puzzles.length < 1000) {
+              console.error("Failed to fetch puzzles, got:", puzzles.length);
+              process.exit(1);
+            }
+
+            puzzles.sort((a, b) => a.r - b.r);
+            fs.mkdirSync("public", { recursive: true });
+            fs.writeFileSync("public/puzzles.txt", JSON.stringify(puzzles));
+            console.log("Successfully saved puzzles:", puzzles.length);
+          })();
           '
       - name: Upload Downloadable File
         uses: actions/upload-artifact@v4
@@ -42,5 +73,5 @@ jobs:
           git config user.name "github-actions"
           git config user.email "actions@github.com"
           git add public/puzzles.txt
-          git commit -m "Add 10,000 puzzles" || true
-          git push || true
+          git commit -m "Add 10,000 real puzzles"
+          git push
