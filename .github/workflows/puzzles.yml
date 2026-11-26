@@ -1,0 +1,45 @@
+name: Build Puzzles
+on: workflow_dispatch
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: |
+          node -e '
+          const fs = require("fs");
+          (async () => {
+            const puzzles = [];
+            for (let offset = 0; offset < 10000; offset += 100) {
+              const url = `https://huggingface.co{offset}&length=100`;
+              const res = await fetch(url);
+              if (!res.ok) { await new Promise(r => setTimeout(r, 1500)); offset -= 100; continue; }
+              const data = await res.json();
+              for (const item of data.rows) {
+                const r = item.row;
+                puzzles.push({
+                  id: r.PuzzleId,
+                  f: r.FEN,
+                  m: String(r.Moves).trim().split(/\s+/),
+                  r: Number(r.Rating),
+                  t: (Array.isArray(r.Themes) ? r.Themes : String(r.Themes).trim().split(/\s+/)).slice(0, 3)
+                });
+              }
+            }
+            puzzles.sort((a, b) => a.r - b.r);
+            fs.mkdirSync("public", { recursive: true });
+            fs.writeFileSync("public/puzzles.txt", JSON.stringify(puzzles));
+          })();
+          '
+      - run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add public/puzzles.txt
+          git commit -m "Add 10,000 puzzles"
+          git push
+          
