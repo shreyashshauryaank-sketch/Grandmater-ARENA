@@ -7,63 +7,39 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-python@v5
         with:
-          node-version: 22
-      - name: Stream 10,000 Puzzles
+          python-version: '3.11'
+      - name: Download and Extract 10,000 Puzzles
         run: |
-          which zstd || (sudo apt-get update && sudo apt-get install -y zstd)
-          node -e '
-          const fs = require("fs");
-          const readline = require("readline");
-          const { spawn } = require("child_process");
+          pip install -q duckdb
+          curl -fSL -o puzzles.parquet "https://huggingface.co/datasets/Lichess/chess-puzzles/resolve/refs%2Fconvert%2Fparquet/default/train/0000.parquet"
+          python - << 'EOF'
+          import duckdb, json, os
 
-          (async () => {
-            const curl = spawn("curl", [
-              "-sSL",
-              "-A", "Mozilla/5.0 (compatible; GrandmasterArena/1.0)",
-              "https://lichess.org"
-            ]);
-            const zstd = spawn("zstd", ["-d", "-q", "-c"]);
-            curl.stdout.pipe(zstd.stdin);
+          rows = duckdb.sql("SELECT PuzzleId, FEN, Moves, Rating, Themes FROM 'puzzles.parquet' LIMIT 10000").fetchall()
+          puzzles = []
+          for pid, fen, moves, rating, themes in rows:
+              theme_list = themes.split() if isinstance(themes, str) else list(themes)
+              puzzles.append({
+                  "id": str(pid),
+                  "f": str(fen),
+                  "m": str(moves).strip().split(),
+                  "r": int(rating),
+                  "t": [str(x) for x in theme_list[:3]]
+              })
 
-            const rl = readline.createInterface({ input: zstd.stdout });
-            const puzzles = [];
-            let isHeader = true;
+          assert len(puzzles) == 10000, f"Expected 10000 puzzles, got {len(puzzles)}"
+          puzzles.sort(key=lambda x: x["r"])
 
-            for await (const line of rl) {
-              if (isHeader) { isHeader = false; continue; }
-              const c = line.split(",");
-              if (c.length < 8) continue;
+          os.makedirs("public", exist_ok=True)
+          with open("public/puzzles.txt", "w", encoding="utf-8") as f:
+              json.dump(puzzles, f, separators=(",", ":"))
 
-              puzzles.push({
-                id: c.at(0),
-                f: c.at(1),
-                m: c.at(2).trim().split(" "),
-                r: Number(c.at(3)),
-                t: c.at(7).trim().split(" ").slice(0, 3)
-              });
-
-              if (puzzles.length >= 10000) {
-                rl.close();
-                curl.kill();
-                zstd.kill();
-                break;
-              }
-            }
-
-            if (puzzles.length < 1000) {
-              console.error("Failed to fetch puzzles, got:", puzzles.length);
-              process.exit(1);
-            }
-
-            puzzles.sort((a, b) => a.r - b.r);
-            fs.mkdirSync("public", { recursive: true });
-            fs.writeFileSync("public/puzzles.txt", JSON.stringify(puzzles));
-            console.log("Successfully saved puzzles:", puzzles.length);
-          })();
-          '
-      - name: Upload Downloadable File
+          os.remove("puzzles.parquet")
+          print("SUCCESS! Saved exact count:", len(puzzles))
+          EOF
+      - name: Upload Downloadable Artifact
         uses: actions/upload-artifact@v4
         with:
           name: puzzles-txt
