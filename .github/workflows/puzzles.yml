@@ -10,14 +10,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Download and Extract 10,000 Puzzles
+      - name: Download and Extract 50,000 Puzzles
         run: |
           pip install -q duckdb
           curl -fSL -o puzzles.parquet "https://huggingface.co/datasets/Lichess/chess-puzzles/resolve/refs%2Fconvert%2Fparquet/default/train/0000.parquet"
           python - << 'EOF'
           import duckdb, json, os
 
-          rows = duckdb.sql("SELECT PuzzleId, FEN, Moves, Rating, Themes FROM 'puzzles.parquet' LIMIT 10000").fetchall()
+          rows = duckdb.sql("SELECT PuzzleId, FEN, Moves, Rating, Themes FROM 'puzzles.parquet' LIMIT 50000").fetchall()
           puzzles = []
           for pid, fen, moves, rating, themes in rows:
               theme_list = themes.split() if isinstance(themes, str) else list(themes)
@@ -29,7 +29,7 @@ jobs:
                   "t": [str(x) for x in theme_list[:3]]
               })
 
-          assert len(puzzles) == 10000, f"Expected 10000 puzzles, got {len(puzzles)}"
+          assert len(puzzles) == 50000, f"Expected 50000 puzzles, got {len(puzzles)}"
           puzzles.sort(key=lambda x: x["r"])
 
           os.makedirs("public", exist_ok=True)
@@ -49,5 +49,5 @@ jobs:
           git config user.name "github-actions"
           git config user.email "actions@github.com"
           git add public/puzzles.txt
-          git commit -m "Add 10,000 real puzzles"
+          git commit -m "Add 50,000 real puzzles"
           git push
