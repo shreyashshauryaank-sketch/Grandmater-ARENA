@@ -10,41 +10,45 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Clone and Convert All Lichess Openings
+      - name: Download and Convert All Lichess Openings
         run: |
           pip install -q chess
-          git clone --depth 1 https://github.com /tmp/openings
+          curl -fSL -o openings.zip "https://github.com"
           python - << 'EOF'
-          import chess, chess.pgn, glob, io, json, os
+          import chess, chess.pgn, io, json, os, zipfile
 
           openings = {}
           total_rows = 0
 
-          for filepath in sorted(glob.glob('/tmp/openings/*.tsv')):
-              with open(filepath, 'r', encoding='utf-8') as f:
-                  lines = f.read().strip().split('\n')[1:]
-              for line in lines:
-                  parts = line.split('\t')
-                  if len(parts) < 3:
-                      continue
-                  eco, name, pgn = [p.strip() for p in parts[:3]]
-                  game = chess.pgn.read_game(io.StringIO(pgn))
-                  if not game:
-                      continue
-                  board = game.board()
-                  for move in game.mainline_moves():
-                      board.push(move)
-                  norm_fen = ' '.join(board.fen().split(' ')[:4])
-                  openings[norm_fen] = {'eco': eco, 'name': name}
-                  total_rows += 1
+          with zipfile.ZipFile("openings.zip", "r") as z:
+              tsv_files = sorted([f for f in z.namelist() if f.endswith(".tsv") and "/dist/" not in f])
+              for fname in tsv_files:
+                  lines = z.read(fname).decode("utf-8").strip().split("\n")[1:]
+                  for line in lines:
+                      parts = line.split("\t")
+                      if len(parts) < 3:
+                          continue
+                      eco = parts[0].strip()
+                      name = parts[1].strip()
+                      pgn = parts[2].strip()
+                      game = chess.pgn.read_game(io.StringIO(pgn))
+                      if not game:
+                          continue
+                      board = game.board()
+                      for move in game.mainline_moves():
+                          board.push(move)
+                      norm_fen = " ".join(board.fen().split(" ")[:4])
+                      openings[norm_fen] = {"eco": eco, "name": name}
+                      total_rows += 1
 
           assert len(openings) > 1000, f"Too few openings parsed: {len(openings)}"
 
-          os.makedirs('public', exist_ok=True)
-          with open('public/openings.json', 'w', encoding='utf-8') as f:
-              json.dump(openings, f, separators=(',', ':'))
+          os.makedirs("public", exist_ok=True)
+          with open("public/openings.json", "w", encoding="utf-8") as f:
+              json.dump(openings, f, separators=(",", ":"))
 
-          print('SUCCESS! Total rows:', total_rows, '| Unique positions saved:', len(openings))
+          os.remove("openings.zip")
+          print("SUCCESS! Total rows:", total_rows, "| Unique positions saved:", len(openings))
           EOF
       - name: Upload Downloadable Artifact
         uses: actions/upload-artifact@v4
@@ -56,6 +60,5 @@ jobs:
           git config user.name "github-actions"
           git config user.email "actions@github.com"
           git add public/openings.json
-          git commit -m "Add all Lichess openings" || true
-          git pull --rebase || true
+          git commit -m "Add all Lichess openings"
           git push
