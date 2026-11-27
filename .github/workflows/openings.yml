@@ -19,9 +19,10 @@ jobs:
 
           openings = {}
           total_rows = 0
+          target_files = {"a.tsv", "b.tsv", "c.tsv", "d.tsv", "e.tsv"}
 
           with zipfile.ZipFile("openings.zip", "r") as z:
-              tsv_files = sorted([f for f in z.namelist() if f.endswith(".tsv") and "/dist/" not in f])
+              tsv_files = sorted([f for f in z.namelist() if os.path.basename(f) in target_files])
               for fname in tsv_files:
                   lines = z.read(fname).decode("utf-8").strip().split("\n")[1:]
                   for line in lines:
@@ -31,6 +32,8 @@ jobs:
                       eco = parts[0].strip()
                       name = parts[1].strip()
                       pgn = parts[2].strip()
+                      if not pgn:
+                          continue
                       game = chess.pgn.read_game(io.StringIO(pgn))
                       if not game:
                           continue
@@ -60,5 +63,4 @@ jobs:
           git config user.name "github-actions"
           git config user.email "actions@github.com"
           git add public/openings.json
-          git commit -m "Add all Lichess openings"
-          git push
+          git diff --cached --quiet || (git commit -m "Add all Lichess openings" && git push)
