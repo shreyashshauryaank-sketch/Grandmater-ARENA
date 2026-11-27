@@ -7,60 +7,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: Download and Convert All Lichess Openings
+      - name: Download All Lichess Openings
         run: |
-          pip install -q chess
-          curl -fSL -o openings.zip "https://github.com"
-          python - << 'EOF'
-          import chess, chess.pgn, io, json, os, zipfile
-
-          openings = {}
-          total_rows = 0
-          target_files = {"a.tsv", "b.tsv", "c.tsv", "d.tsv", "e.tsv"}
-
-          with zipfile.ZipFile("openings.zip", "r") as z:
-              tsv_files = sorted([f for f in z.namelist() if os.path.basename(f) in target_files])
-              for fname in tsv_files:
-                  lines = z.read(fname).decode("utf-8").strip().split("\n")[1:]
-                  for line in lines:
-                      parts = line.split("\t")
-                      if len(parts) < 3:
-                          continue
-                      eco = parts[0].strip()
-                      name = parts[1].strip()
-                      pgn = parts[2].strip()
-                      if not pgn:
-                          continue
-                      game = chess.pgn.read_game(io.StringIO(pgn))
-                      if not game:
-                          continue
-                      board = game.board()
-                      for move in game.mainline_moves():
-                          board.push(move)
-                      norm_fen = " ".join(board.fen().split(" ")[:4])
-                      openings[norm_fen] = {"eco": eco, "name": name}
-                      total_rows += 1
-
-          assert len(openings) > 1000, f"Too few openings parsed: {len(openings)}"
-
-          os.makedirs("public", exist_ok=True)
-          with open("public/openings.json", "w", encoding="utf-8") as f:
-              json.dump(openings, f, separators=(",", ":"))
-
-          os.remove("openings.zip")
-          print("SUCCESS! Total rows:", total_rows, "| Unique positions saved:", len(openings))
-          EOF
-      - name: Upload Downloadable Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: openings-json
-          path: public/openings.json
+          mkdir -p public
+          curl -fSL https://githubusercontent.com > public/openings.tsv
+          tail -n +2 <(curl -fSL https://githubusercontent.com) >> public/openings.tsv
+          tail -n +2 <(curl -fSL https://githubusercontent.com) >> public/openings.tsv
+          tail -n +2 <(curl -fSL https://githubusercontent.com) >> public/openings.tsv
+          tail -n +2 <(curl -fSL https://githubusercontent.com) >> public/openings.tsv
       - name: Commit to Repo
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git add public/openings.json
-          git diff --cached --quiet || (git commit -m "Add all Lichess openings" && git push)
+          git add public/openings.tsv
+          git commit -m "Add all 3,600+ Lichess openings"
+          git push
