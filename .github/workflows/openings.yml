@@ -1,0 +1,63 @@
+name: Build All Openings
+on: workflow_dispatch
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Download All Lichess Openings (ECO A-E)
+        run: |
+          pip install -q chess
+          python - << 'EOF'
+          import chess, chess.pgn, io, json, os, urllib.request
+
+          files = ['a.tsv', 'b.tsv', 'c.tsv', 'd.tsv', 'e.tsv']
+          base_url = 'https://githubusercontent.com'
+          openings = {}
+          total_rows = 0
+
+          for fname in files:
+              req = urllib.request.Request(base_url + fname, headers={'User-Agent': 'GrandmasterArena/1.0'})
+              text = urllib.request.urlopen(req).read().decode('utf-8')
+              lines = text.strip().split('\n')[1:]
+
+              for line in lines:
+                  parts = line.split('\t')
+                  if len(parts) < 3:
+                      continue
+                  eco, name, pgn = [p.strip() for p in parts[:3]]
+                  game = chess.pgn.read_game(io.StringIO(pgn))
+                  if not game:
+                      continue
+                  board = game.board()
+                  for move in game.mainline_moves():
+                      board.push(move)
+                  norm_fen = ' '.join(board.fen().split(' ')[:4])
+                  openings[norm_fen] = {'eco': eco, 'name': name}
+                  total_rows += 1
+
+          assert len(openings) > 3400, f"Expected 3400+ openings, got {len(openings)}"
+
+          os.makedirs('public', exist_ok=True)
+          with open('public/openings.json', 'w', encoding='utf-8') as f:
+              json.dump(openings, f, separators=(',', ':'))
+
+          print('SUCCESS! Total rows:', total_rows, '| Unique FENs saved:', len(openings))
+          EOF
+      - name: Upload Downloadable Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openings-json
+          path: public/openings.json
+      - name: Commit to Repo
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add public/openings.json
+          git commit -m "Add all 3,600+ Lichess openings"
+          git push
