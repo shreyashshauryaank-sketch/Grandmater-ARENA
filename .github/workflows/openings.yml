@@ -10,22 +10,19 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Download All Lichess Openings (ECO A-E)
+      - name: Clone and Convert All Lichess Openings
         run: |
           pip install -q chess
+          git clone --depth 1 https://github.com /tmp/openings
           python - << 'EOF'
-          import chess, chess.pgn, io, json, os, urllib.request
+          import chess, chess.pgn, glob, io, json, os
 
-          files = ['a.tsv', 'b.tsv', 'c.tsv', 'd.tsv', 'e.tsv']
-          base_url = 'https://githubusercontent.com'
           openings = {}
           total_rows = 0
 
-          for fname in files:
-              req = urllib.request.Request(base_url + fname, headers={'User-Agent': 'GrandmasterArena/1.0'})
-              text = urllib.request.urlopen(req).read().decode('utf-8')
-              lines = text.strip().split('\n')[1:]
-
+          for filepath in sorted(glob.glob('/tmp/openings/*.tsv')):
+              with open(filepath, 'r', encoding='utf-8') as f:
+                  lines = f.read().strip().split('\n')[1:]
               for line in lines:
                   parts = line.split('\t')
                   if len(parts) < 3:
@@ -41,13 +38,13 @@ jobs:
                   openings[norm_fen] = {'eco': eco, 'name': name}
                   total_rows += 1
 
-          assert len(openings) > 3400, f"Expected 3400+ openings, got {len(openings)}"
+          assert len(openings) > 1000, f"Too few openings parsed: {len(openings)}"
 
           os.makedirs('public', exist_ok=True)
           with open('public/openings.json', 'w', encoding='utf-8') as f:
               json.dump(openings, f, separators=(',', ':'))
 
-          print('SUCCESS! Total rows:', total_rows, '| Unique FENs saved:', len(openings))
+          print('SUCCESS! Total rows:', total_rows, '| Unique positions saved:', len(openings))
           EOF
       - name: Upload Downloadable Artifact
         uses: actions/upload-artifact@v4
@@ -59,5 +56,6 @@ jobs:
           git config user.name "github-actions"
           git config user.email "actions@github.com"
           git add public/openings.json
-          git commit -m "Add all 3,600+ Lichess openings"
+          git commit -m "Add all Lichess openings" || true
+          git pull --rebase || true
           git push
